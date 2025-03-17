@@ -1,5 +1,5 @@
-#ifndef ERRORS_H
-#define ERRORS_H
+#ifndef ERRORS_H_
+#define ERRORS_H_
 
 #include "alias.h"
 

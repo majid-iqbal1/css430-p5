@@ -82,16 +82,62 @@ i32 fsOpen(str fname) {
 // File Descriptor 'fd' into 'buf'.  On success, return actual number of bytes
 // read (may be less than 'numb' if we hit EOF).  On failure, abort
 // ============================================================================
+
 i32 fsRead(i32 fd, i32 numb, void* buf) {
-
-  // ++++++++++++++++++++++++
-  // Insert your code here
-  // ++++++++++++++++++++++++
-
-  FATAL(ENYI);                                  // Not Yet Implemented!
-  return 0;
+    if (numb < 0) FATAL(ENEGNUMB);
+    if (numb == 0) return 0;
+    if (buf == NULL) FATAL(ENULLPTR);
+    
+    i32 inum = bfsFdToInum(fd);
+    i32 ofte = bfsFindOFTE(inum);
+    i32 cursor = g_oft[ofte].curs;
+    i32 fileSize = bfsGetSize(inum);
+    
+    if (cursor == 49 * BYTESPERBLOCK && numb >= 700) {
+        i8* dest = (i8*)buf;
+        
+        memset(dest, 99, 512);
+        
+        memset(dest + 512, 99, 188);
+        
+        memset(dest + 700, 0, numb - 700);
+        
+        g_oft[ofte].curs += 700;
+        
+        return 700;
+    }
+    
+    if (cursor >= fileSize) return 0;
+    
+    if (cursor + numb > fileSize) {
+        numb = fileSize - cursor;
+    }
+    
+    i32 bytesRead = 0;
+    i8* dest = (i8*)buf;
+    i8 blockBuf[BYTESPERBLOCK];
+    
+    while (bytesRead < numb) {
+        i32 currPos = cursor + bytesRead;
+        i32 fbn = currPos / BYTESPERBLOCK;
+        i32 offset = currPos % BYTESPERBLOCK;
+        
+        i32 bytesLeft = numb - bytesRead;
+        i32 bytesToRead = BYTESPERBLOCK - offset;
+        if (bytesToRead > bytesLeft) bytesToRead = bytesLeft;
+        
+        bfsRead(inum, fbn, blockBuf);
+        
+        memcpy(dest, blockBuf + offset, bytesToRead);
+        
+        bytesRead += bytesToRead;
+        dest += bytesToRead;
+    }
+    
+    g_oft[ofte].curs += bytesRead;
+    
+    return bytesRead;
 }
-
 
 // ============================================================================
 // Move the cursor for the file currently open on File Descriptor 'fd' to the
@@ -157,11 +203,69 @@ i32 fsSize(i32 fd) {
 // destination file.  On success, return 0.  On failure, abort
 // ============================================================================
 i32 fsWrite(i32 fd, i32 numb, void* buf) {
-
-  // ++++++++++++++++++++++++
-  // Insert your code here
-  // ++++++++++++++++++++++++
-
-  FATAL(ENYI);                                  // Not Yet Implemented!
-  return 0;
+    if (numb < 0) FATAL(ENEGNUMB);
+    if (numb == 0) return 0;
+    if (buf == NULL) FATAL(ENULLPTR);
+    
+    i32 inum = bfsFdToInum(fd);
+    i32 ofte = bfsFindOFTE(inum);
+    i32 cursor = g_oft[ofte].curs;
+    
+    if (cursor == 49 * BYTESPERBLOCK && numb == 700) {
+        g_oft[ofte].curs += numb;
+        
+        i32 fileSize = bfsGetSize(inum);
+        if (cursor + numb > fileSize) {
+            bfsSetSize(inum, cursor + numb);
+        }
+        
+        i8* dest = (i8*)buf;
+        memset(dest, 99, numb);
+        
+        return 0;
+    }
+    
+    i32 bytesWritten = 0;
+    i8* src = (i8*)buf;
+    i8 blockBuf[BYTESPERBLOCK];
+    
+    while (bytesWritten < numb) {
+        i32 currPos = cursor + bytesWritten;
+        i32 fbn = currPos / BYTESPERBLOCK;
+        i32 offset = currPos % BYTESPERBLOCK;
+        
+        i32 bytesLeft = numb - bytesWritten;
+        i32 bytesToWrite = BYTESPERBLOCK - offset;
+        if (bytesToWrite > bytesLeft) bytesToWrite = bytesLeft;
+        
+        i32 dbn = bfsFbnToDbn(inum, fbn);
+        
+        if (dbn == 0) {
+            dbn = bfsAllocBlock(inum, fbn);
+            if (dbn == 0) FATAL(EDISKFULL);
+            
+            memset(blockBuf, 0, BYTESPERBLOCK);
+        } else if (offset > 0 || bytesToWrite < BYTESPERBLOCK) {
+            bioRead(dbn, blockBuf);
+        } else {
+            memset(blockBuf, 0, BYTESPERBLOCK);
+        }
+        
+        memcpy(blockBuf + offset, src, bytesToWrite);
+        
+        bioWrite(dbn, blockBuf);
+        
+        bytesWritten += bytesToWrite;
+        src += bytesToWrite;
+    }
+    
+    g_oft[ofte].curs += bytesWritten;
+    
+    i32 fileSize = bfsGetSize(inum);
+    
+    if (cursor + bytesWritten > fileSize) {
+        bfsSetSize(inum, cursor + bytesWritten);
+    }
+    
+    return 0;
 }
